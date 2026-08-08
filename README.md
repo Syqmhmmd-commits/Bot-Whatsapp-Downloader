@@ -8,7 +8,7 @@ Bot WhatsApp buat download video/audio dari TikTok, Instagram, dan YouTube — t
 | `.tiktok <link>` | Download video TikTok tanpa watermark |
 | `.ig <link>` | Download video/foto Instagram |
 | `.yt <link>` | Download video YouTube |
-| `.ytmp3 <link>` | Download audio YouTube (mp3) |
+| `.ytmp3 <link>` | Download audio YouTube (mp3), Bisa untuk download YT music |
 | `.menu` | Lihat daftar command |
 
 ## Yang Dibutuhkan
