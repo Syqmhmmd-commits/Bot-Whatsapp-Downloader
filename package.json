@@ -1,0 +1,17 @@
+{
+  "name": "wa-downloader-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp downloader bot (TikTok, YouTube, Instagram) using Baileys",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "qrcode-terminal": "^0.12.0",
+    "pino": "^9.4.0",
+    "node-fetch": "^2.7.0"
+  },
+  "license": "MIT"
+}
