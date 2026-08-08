@@ -64,7 +64,8 @@ pm2 save
 ```
 
 ## Catatan Penting
-- **API downloader pihak ketiga** (tikwm.com dll) yang dipakai di sini bisa berubah/down sewaktu-waktu karena bukan API resmi. Kalau error, cek dulu apakah endpoint-nya masih hidup atau ganti ke API alternatif.
+- **Instagram**: pakai yt-dlp juga (bukan API pihak ketiga, karena kebanyakan API publik IG gampang mati/nggak reliable). Konsekuensinya, IG sering butuh **login** buat akses beberapa konten (terutama private account atau reels tertentu). Kalau `.ig` gagal dengan error terkait "login required", kamu perlu export cookies browser IG kamu ke file `cookies.txt` dan tambahin opsi `--cookies cookies.txt` di command yt-dlp dalam kode (`index.js`, fungsi `downloadWithYtDlp`). Cara export cookies: pakai extension browser seperti "Get cookies.txt".
+- **API downloader TikTok** (tikwm.com) yang dipakai di sini API publik pihak ketiga, bisa berubah/down sewaktu-waktu. Kalau error, cek dulu apakah endpoint-nya masih hidup.
 - **Risiko banned**: pakai library unofficial (Baileys) untuk otomasi WA melanggar ToS WhatsApp secara teknis. Jangan spam kirim pesan otomatis dalam jumlah besar, dan sebaiknya pakai nomor sekunder (bukan nomor utama) buat testing/bot.
 - File YouTube yang didownload disimpan sementara di folder `tmp/` dan otomatis dihapus setelah dikirim.
 - Kalau mau tambah command lain, edit blok `if/else` di `index.js` bagian `messages.upsert`.

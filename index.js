@@ -38,25 +38,16 @@ async function downloadTikTok(url) {
   return json.data.play; // direct video URL (no watermark)
 }
 
-// Instagram, pakai API publik (contoh: saveig / snapinsta style endpoint)
-// Catatan: endpoint publik IG suka berubah-ubah, ganti sesuai kebutuhan.
-async function downloadInstagram(url) {
-  const api = `https://api.tikwm.com/api/igdl/?url=${encodeURIComponent(url)}`;
-  const res = await fetch(api);
-  const json = await res.json();
-  if (!json?.data?.[0]?.url) throw new Error("Gagal ambil media Instagram. Cek link-nya / private?");
-  return json.data[0].url;
-}
-
-// YouTube video, pakai "python -m yt_dlp" (butuh python + pip install yt-dlp)
-function downloadYouTube(url, audioOnly = false) {
+// Download generik pakai "python -m yt_dlp" — dipakai buat YouTube & Instagram
+// (yt-dlp support banyak situs termasuk instagram.com, tiktok.com, dll)
+function downloadWithYtDlp(url, audioOnly = false) {
   return new Promise((resolve, reject) => {
-    const filename = `yt_${Date.now()}.%(ext)s`;
+    const filename = `dl_${Date.now()}.%(ext)s`;
     const outputTemplate = path.join(TMP_DIR, filename);
 
     const args = audioOnly
       ? ["-m", "yt_dlp", "-x", "--audio-format", "mp3", "-o", outputTemplate, url]
-      : ["-m", "yt_dlp", "-f", "mp4[height<=480]/mp4", "-o", outputTemplate, url];
+      : ["-m", "yt_dlp", "-f", "mp4[height<=480]/best[ext=mp4]/best", "-o", outputTemplate, url];
 
     const proc = spawn(PYTHON_CMD, args);
 
@@ -71,7 +62,6 @@ function downloadYouTube(url, audioOnly = false) {
       if (code !== 0) {
         return reject(new Error(`yt-dlp gagal (exit ${code}): ${stderr.slice(-300)}`));
       }
-      // Cari file hasil download di TMP_DIR berdasarkan prefix timestamp
       const prefix = filename.split(".%(ext)s")[0];
       const found = fs.readdirSync(TMP_DIR).find((f) => f.startsWith(prefix));
       if (!found) return reject(new Error("File hasil download tidak ditemukan."));
@@ -137,16 +127,17 @@ async function startBot() {
         });
       } else if (cmd === ".ig" || cmd === ".instagram") {
         if (!arg) return reply(sock, from, "Kirim: .ig <link>");
-        await reply(sock, from, "⏳ Lagi ambil media Instagram...");
-        const mediaUrl = await downloadInstagram(arg);
+        await reply(sock, from, "⏳ Lagi ambil media Instagram, sabar ya...");
+        const filePath = await downloadWithYtDlp(arg, false);
         await sock.sendMessage(from, {
-          video: { url: mediaUrl },
+          video: fs.readFileSync(filePath),
           caption: "✅ Berikut medianya",
         });
+        fs.unlinkSync(filePath);
       } else if (cmd === ".yt" || cmd === ".ytmp4") {
         if (!arg) return reply(sock, from, "Kirim: .yt <link>");
         await reply(sock, from, "⏳ Lagi download video YouTube, sabar ya...");
-        const filePath = await downloadYouTube(arg, false);
+        const filePath = await downloadWithYtDlp(arg, false);
         await sock.sendMessage(from, {
           video: fs.readFileSync(filePath),
           caption: "✅ Berikut videonya",
@@ -155,7 +146,7 @@ async function startBot() {
       } else if (cmd === ".ytmp3") {
         if (!arg) return reply(sock, from, "Kirim: .ytmp3 <link>");
         await reply(sock, from, "⏳ Lagi download audio YouTube, sabar ya...");
-        const filePath = await downloadYouTube(arg, true);
+        const filePath = await downloadWithYtDlp(arg, true);
         await sock.sendMessage(from, {
           audio: fs.readFileSync(filePath),
           mimetype: "audio/mp4",
