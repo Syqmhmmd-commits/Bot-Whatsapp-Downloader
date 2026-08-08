@@ -64,7 +64,14 @@ pm2 save
 ```
 
 ## Catatan Penting
-- **Instagram**: pakai yt-dlp juga (bukan API pihak ketiga, karena kebanyakan API publik IG gampang mati/nggak reliable). Konsekuensinya, IG sering butuh **login** buat akses beberapa konten (terutama private account atau reels tertentu). Kalau `.ig` gagal dengan error terkait "login required", kamu perlu export cookies browser IG kamu ke file `cookies.txt` dan tambahin opsi `--cookies cookies.txt` di command yt-dlp dalam kode (`index.js`, fungsi `downloadWithYtDlp`). Cara export cookies: pakai extension browser seperti "Get cookies.txt".
+- **Instagram (Story, Reels, Post)**: bot ini butuh file `cookies.txt` supaya bisa akses **Story** (yang selalu butuh login) dan konten lain yang perlu autentikasi. Cara dapetinnya:
+  1. Install extension **"Get cookies.txt LOCALLY"** di Chrome ([link Chrome Web Store](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc))
+  2. Login ke Instagram di browser tersebut
+  3. Buka instagram.com, klik icon extension-nya, klik **Export**, simpan sebagai `cookies.txt`
+  4. Taruh file `cookies.txt` itu **di folder yang sama** dengan `index.js` (folder root project ini)
+  - Reels dan Post di akun publik biasanya bisa didownload tanpa cookies; Story dan konten akun private butuh cookies ini.
+  - **Jangan pernah share atau push file `cookies.txt` ke GitHub** — file ini berisi sesi login akun Instagram kamu. File ini sudah otomatis di-exclude lewat `.gitignore`.
+  - Cookies akan expired setelah beberapa waktu (biasanya beberapa minggu/bulan) — kalau `.ig` mulai gagal lagi dengan error login, ulangi proses export di atas.
 - **API downloader TikTok** (tikwm.com) yang dipakai di sini API publik pihak ketiga, bisa berubah/down sewaktu-waktu. Kalau error, cek dulu apakah endpoint-nya masih hidup.
 - **Risiko banned**: pakai library unofficial (Baileys) untuk otomasi WA melanggar ToS WhatsApp secara teknis. Jangan spam kirim pesan otomatis dalam jumlah besar, dan sebaiknya pakai nomor sekunder (bukan nomor utama) buat testing/bot.
 - File YouTube yang didownload disimpan sementara di folder `tmp/` dan otomatis dihapus setelah dikirim.

@@ -24,6 +24,12 @@ const { spawn } = require("child_process");
 // Kalau "python -m yt_dlp" tidak ketemu, ganti PYTHON_CMD ke "python3".
 const PYTHON_CMD = "python";
 
+// Path ke file cookies.txt (export manual dari browser) buat akses Instagram Story & konten private.
+// Cara dapetin: install extension "Get cookies.txt LOCALLY" di Chrome, login IG, export cookies.txt,
+// lalu taruh file itu di folder yang sama dengan index.js ini.
+// Kosongkan jadi "" atau hapus file-nya kalau tidak mau pakai cookies (Story akan gagal).
+const IG_COOKIES_FILE = path.join(__dirname, "cookies.txt");
+
 const TMP_DIR = path.join(__dirname, "tmp");
 if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR);
 
@@ -40,14 +46,18 @@ async function downloadTikTok(url) {
 
 // Download generik pakai "python -m yt_dlp" — dipakai buat YouTube & Instagram
 // (yt-dlp support banyak situs termasuk instagram.com, tiktok.com, dll)
-function downloadWithYtDlp(url, audioOnly = false) {
+function downloadWithYtDlp(url, audioOnly = false, useCookies = false) {
   return new Promise((resolve, reject) => {
     const filename = `dl_${Date.now()}.%(ext)s`;
     const outputTemplate = path.join(TMP_DIR, filename);
 
     const args = audioOnly
-      ? ["-m", "yt_dlp", "-x", "--audio-format", "mp3", "-o", outputTemplate, url]
-      : ["-m", "yt_dlp", "-f", "mp4[height<=480]/best[ext=mp4]/best", "-o", outputTemplate, url];
+      ? ["-m", "yt_dlp", "--no-playlist", "--playlist-items", "1", "-x", "--audio-format", "mp3", "-o", outputTemplate, url]
+      : ["-m", "yt_dlp", "--no-playlist", "--playlist-items", "1", "-f", "mp4[height<=480]/best[ext=mp4]/best", "-o", outputTemplate, url];
+
+    if (useCookies && fs.existsSync(IG_COOKIES_FILE)) {
+      args.push("--cookies", IG_COOKIES_FILE);
+    }
 
     const proc = spawn(PYTHON_CMD, args);
 
@@ -63,8 +73,12 @@ function downloadWithYtDlp(url, audioOnly = false) {
         return reject(new Error(`yt-dlp gagal (exit ${code}): ${stderr.slice(-300)}`));
       }
       const prefix = filename.split(".%(ext)s")[0];
-      const found = fs.readdirSync(TMP_DIR).find((f) => f.startsWith(prefix));
-      if (!found) return reject(new Error("File hasil download tidak ditemukan."));
+      const candidates = fs.readdirSync(TMP_DIR).filter((f) => f.startsWith(prefix));
+      if (candidates.length === 0) return reject(new Error("File hasil download tidak ditemukan."));
+      // Kalau lebih dari satu file cocok, ambil yang paling baru dibuat.
+      const found = candidates
+        .map((f) => ({ f, mtime: fs.statSync(path.join(TMP_DIR, f)).mtimeMs }))
+        .sort((a, b) => b.mtime - a.mtime)[0].f;
       resolve(path.join(TMP_DIR, found));
     });
   });
@@ -128,7 +142,7 @@ async function startBot() {
       } else if (cmd === ".ig" || cmd === ".instagram") {
         if (!arg) return reply(sock, from, "Kirim: .ig <link>");
         await reply(sock, from, "⏳ Lagi ambil media Instagram, sabar ya...");
-        const filePath = await downloadWithYtDlp(arg, false);
+        const filePath = await downloadWithYtDlp(arg, false, true);
         await sock.sendMessage(from, {
           video: fs.readFileSync(filePath),
           caption: "✅ Berikut medianya",
