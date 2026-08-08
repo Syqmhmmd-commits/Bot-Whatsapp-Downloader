@@ -44,16 +44,33 @@ async function downloadTikTok(url) {
   return json.data.play; // direct video URL (no watermark)
 }
 
-// Download generik pakai "python -m yt_dlp" — dipakai buat YouTube & Instagram
-// (yt-dlp support banyak situs termasuk instagram.com, tiktok.com, dll)
-function downloadWithYtDlp(url, audioOnly = false, useCookies = false) {
+// Ambil ID unik dari link Instagram (story/reel/post), buat mencocokkan file hasil download
+// dengan item yang BENAR-BENAR diminta (bukan asal ambil file yang paling baru).
+function extractInstagramId(url) {
+  // Story: instagram.com/stories/username/1234567890123456/
+  // Reel/Post: instagram.com/reel/ABC123xyz/ atau /p/ABC123xyz/
+  const storyMatch = url.match(/\/stories\/[^/]+\/(\d+)/);
+  if (storyMatch) return storyMatch[1];
+  const shortcodeMatch = url.match(/\/(?:reel|p|tv)\/([A-Za-z0-9_-]+)/);
+  if (shortcodeMatch) return shortcodeMatch[1];
+  return null;
+}
+
+// Menjalankan satu percobaan download yt-dlp.
+// Tiap percobaan pakai SUBFOLDER SENDIRI di dalam tmp/, biar tidak ada file nyasar
+// dari percobaan lain yang ketuker (terutama kalau extractor download >1 item sekaligus).
+function runYtDlpOnce(url, audioOnly, useCookies) {
   return new Promise((resolve, reject) => {
-    const filename = `dl_${Date.now()}.%(ext)s`;
-    const outputTemplate = path.join(TMP_DIR, filename);
+    const attemptId = `${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+    const attemptDir = path.join(TMP_DIR, attemptId);
+    fs.mkdirSync(attemptDir, { recursive: true });
+
+    const outputTemplate = path.join(attemptDir, "%(id)s.%(ext)s");
+    const expectedId = extractInstagramId(url);
 
     const args = audioOnly
-      ? ["-m", "yt_dlp", "--no-playlist", "--playlist-items", "1", "-x", "--audio-format", "mp3", "-o", outputTemplate, url]
-      : ["-m", "yt_dlp", "--no-playlist", "--playlist-items", "1", "-f", "mp4[height<=480]/best[ext=mp4]/best", "-o", outputTemplate, url];
+      ? ["-m", "yt_dlp", "--no-playlist", "-x", "--audio-format", "mp3", "-o", outputTemplate, url]
+      : ["-m", "yt_dlp", "--no-playlist", "-f", "mp4[height<=480]/best[ext=mp4]/best", "-o", outputTemplate, url];
 
     if (useCookies && fs.existsSync(IG_COOKIES_FILE)) {
       args.push("--cookies", IG_COOKIES_FILE);
@@ -62,7 +79,9 @@ function downloadWithYtDlp(url, audioOnly = false, useCookies = false) {
     const proc = spawn(PYTHON_CMD, args);
 
     let stderr = "";
+    let stdout = "";
     proc.stderr.on("data", (d) => (stderr += d.toString()));
+    proc.stdout.on("data", (d) => (stdout += d.toString()));
 
     proc.on("error", (err) => {
       reject(new Error(`Gagal jalanin python. Pastikan "${PYTHON_CMD}" ada di PATH. (${err.message})`));
@@ -70,18 +89,68 @@ function downloadWithYtDlp(url, audioOnly = false, useCookies = false) {
 
     proc.on("close", (code) => {
       if (code !== 0) {
+        cleanupDir(attemptDir);
         return reject(new Error(`yt-dlp gagal (exit ${code}): ${stderr.slice(-300)}`));
       }
-      const prefix = filename.split(".%(ext)s")[0];
-      const candidates = fs.readdirSync(TMP_DIR).filter((f) => f.startsWith(prefix));
-      if (candidates.length === 0) return reject(new Error("File hasil download tidak ditemukan."));
-      // Kalau lebih dari satu file cocok, ambil yang paling baru dibuat.
-      const found = candidates
-        .map((f) => ({ f, mtime: fs.statSync(path.join(TMP_DIR, f)).mtimeMs }))
-        .sort((a, b) => b.mtime - a.mtime)[0].f;
-      resolve(path.join(TMP_DIR, found));
+      const files = fs.readdirSync(attemptDir);
+      if (files.length === 0) {
+        cleanupDir(attemptDir);
+        return reject(
+          new Error(`File hasil download tidak ditemukan. Log: ${(stdout + stderr).slice(-300)}`)
+        );
+      }
+
+      // Kalau kita tau ID yang diminta, cari file yang namanya PERSIS cocok dulu.
+      let chosen = null;
+      if (expectedId) {
+        chosen = files.find((f) => f.startsWith(expectedId + "."));
+      }
+      // Fallback: kalau cuma ada 1 file, ambil itu. Kalau lebih dari 1 dan tidak ada yang cocok ID, ambil yang terbaru.
+      if (!chosen) {
+        if (files.length === 1) {
+          chosen = files[0];
+        } else {
+          chosen = files
+            .map((f) => ({ f, mtime: fs.statSync(path.join(attemptDir, f)).mtimeMs }))
+            .sort((a, b) => b.mtime - a.mtime)[0].f;
+        }
+      }
+
+      // Pindahkan file terpilih ke TMP_DIR utama, lalu bersihkan subfolder attempt (termasuk file lain yang tidak dipakai).
+      const finalPath = path.join(TMP_DIR, `${attemptId}_${chosen}`);
+      fs.renameSync(path.join(attemptDir, chosen), finalPath);
+      cleanupDir(attemptDir);
+      resolve(finalPath);
     });
   });
+}
+
+function cleanupDir(dir) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch (_) {
+    // abaikan error cleanup
+  }
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Download generik pakai "python -m yt_dlp" — dipakai buat YouTube & Instagram
+// Instagram Story extractor kadang flaky (kadang gagal padahal cookies & link valid),
+// jadi kita retry otomatis beberapa kali sebelum benar-benar nyerah.
+async function downloadWithYtDlp(url, audioOnly = false, useCookies = false, maxRetries = 2) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await runYtDlpOnce(url, audioOnly, useCookies);
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxRetries) {
+        await sleep(2000); // tunggu 2 detik sebelum coba lagi
+      }
+    }
+  }
+  throw lastError;
 }
 
 // ------------------------- Bot Setup -------------------------
@@ -141,12 +210,22 @@ async function startBot() {
         });
       } else if (cmd === ".ig" || cmd === ".instagram") {
         if (!arg) return reply(sock, from, "Kirim: .ig <link>");
-        await reply(sock, from, "⏳ Lagi ambil media Instagram, sabar ya...");
-        const filePath = await downloadWithYtDlp(arg, false, true);
-        await sock.sendMessage(from, {
-          video: fs.readFileSync(filePath),
-          caption: "✅ Berikut medianya",
-        });
+        await reply(sock, from, "⏳ Lagi ambil media Instagram (auto-retry kalau gagal di percobaan pertama)...");
+        const filePath = await downloadWithYtDlp(arg, false, true, 3);
+        const ext = path.extname(filePath).toLowerCase();
+        const isImage = [".jpg", ".jpeg", ".png", ".webp"].includes(ext);
+        const fileBuffer = fs.readFileSync(filePath);
+        if (isImage) {
+          await sock.sendMessage(from, {
+            image: fileBuffer,
+            caption: "✅ Berikut fotonya",
+          });
+        } else {
+          await sock.sendMessage(from, {
+            video: fileBuffer,
+            caption: "✅ Berikut videonya",
+          });
+        }
         fs.unlinkSync(filePath);
       } else if (cmd === ".yt" || cmd === ".ytmp4") {
         if (!arg) return reply(sock, from, "Kirim: .yt <link>");
